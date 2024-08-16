@@ -1,0 +1,283 @@
+EKS Cluster and Karpenter Setup in AWS
+
+Introduction
+This document describes the step by step process of deploying EKS cluster on AWS cloud platform along with Karpenter setup and configurations which will manage the auto scaling aspect of the EKS cluster worker nodes.
+Architecture
+
+Below architecture will be deployed.
+
+Bastion Server Deployment
+Step1: Create an EC2 Instance in a private subnet with minimum instance type “t3a.small” and ubuntu 20.04 LTS or above.
+Step2: Install terraform,aws cli and kubectl in Bastion Server. The versions are listed below :-
+
+Prerequisite
+Version
+Terraform
+>=1.3.7
+Aws CLI 
+2.15.38
+kubectl
+1.29
+
+
+Terraform Installation Steps
+sudo apt-get update && sudo apt-get install -y gnupg software-properties-common
+
+
+wget -O- https://apt.releases.hashicorp.com/gpg | \
+gpg --dearmor | \
+sudo tee /usr/share/keyrings/hashicorp-archive-keyring.gpg > /dev/null
+
+
+
+echo "deb [signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] \
+https://apt.releases.hashicorp.com $(lsb_release -cs) main" | \
+sudo tee /etc/apt/sources.list.d/hashicorp.list
+
+
+sudo apt update
+sudo apt-get install terraform
+Terraform  --version
+
+
+Aws cli installation steps
+curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o \ "awscliv2.zip"
+unzip awscliv2.zip
+
+
+sudo ./aws/install
+./aws/install -i /usr/local/aws-cli -b /usr/local/bin
+aws --version
+
+Kubectl installation steps
+curl -O https://s3.us-west-2.amazonaws.com/amazon-eks/1.29.3/2024-04-19/bin/linux/amd64/kubectl
+
+
+chmod +x ./kubectl
+
+
+mkdir -p $HOME/bin && cp ./kubectl $HOME/bin/kubectl && export PATH=$HOME/bin:$PATH
+
+
+kubectl version --client
+
+EKS Deployment
+Step 1: Take bastion terminal access and install git-remote-codecommit.
+Pre-requisites needed to be installed before installing git-remote-codecommit as follows:
+
+Setup steps for HTTPS connections to AWS CodeCommit with git-remote-codecommit:
+Install Python3 or later and its package manager pip
+sudo apt update
+sudo apt install python3
+sudo apt install python3-pip 
+
+
+Configure aws cli in your bastion server with access and secret key and region. 
+aws configure
+
+
+AWS Access Key ID [None]: Type your IAM user AWS access key ID here, and then press Enter
+AWS Secret Access Key [None]: Type your IAM user AWS secret access key here, and then press Enter
+Default region name [None]: Type a supported region for CodeCommit here, and then press Enter
+Default output format [None]: Type json here, and then press Enter
+
+Step2: Install git-remote-codecommit
+sudo pip install git-remote-codecommit
+
+
+Step3: Clone the repo from Aws CodeCommit using “git-remote-codecommit”
+
+Repository Name
+Branch
+devops-infra
+dev_v0.1
+
+
+git clone codecommit::<region-name>://<repository-name>
+
+
+Here
+region-name specifies the region where the repository is present.
+repository-name specifies the name of the repo which you want to clone.
+Step3:  EKS Cluster Creation
+cd devops-infra/terraform/eks
+
+
+Open the terraform.tfvars file and fill the variables with your respected values
+Terraform.tfvars fields Description as follows:
+Parameter
+Description
+Cluster_name
+The name of your EKS cluster.
+Cluster_version
+The version of Kubernetes for the EKS cluster.
+Eks_subnets
+Subnets where the EKS node groups will be created.
+Region
+The AWS region where the EKS cluster will be created.
+Vpc_id
+The ID of the VPC where the EKS cluster will be created.
+Create_node_group
+Boolean indicating whether to create a node group along with the cluster.
+Endpoint_private
+Boolean indicating whether the Kubernetes API server endpoint should be private.
+Endpoint_public
+Boolean indicating whether the Kubernetes API server endpoint should be public.
+Eks_node_group_name
+The name of the node group for EKS.
+Kubeconfig_name
+The name of the kubeconfig file used to access the EKS cluster.
+Nodegroup_instance_type
+The instance type(s) for the nodes in the EKS node group(s).
+Disk_size
+The disk size allocated to each node in the EKS node group(s).
+Desired_capacity
+The desired number of nodes in the EKS node group(s).
+Nodegroup_max_size
+The maximum number of nodes in the EKS node group(s).
+Nodegroup_min_size
+The minimum number of nodes in the EKS node group(s).
+Capacity_type
+The capacity type for the nodes in the EKS node group(s), such as On-Demand or Spot Instances.
+Bastion_sg
+security group of the bastion server used to access the EKS cluster.
+
+
+
+
+
+
+
+Run terraform initiate 
+terraform init
+
+
+
+Run terraform Plan
+terraform plan 
+
+
+Run terraform apply
+terraform apply
+
+After running terraform apply it will prompt for yes or no as to whether to execute the terraform code or not. Enter "yes" for execution or "no" for no execution.
+
+Note: It will take 10-15 minutes for creating EKS Cluster in your AWS account.You will see a cluster got created in your aws account as shown below
+
+
+
+
+Step4: Kube Config file Update in Bastion Server
+aws eks update-kubeconfig --region <region_code> --name cluster-name"
+
+
+
+ Variable description : 
+region_code is the AWS region code where your EKS cluster is located
+cluster-name is the name of your EKS cluster
+
+Step5: EKS Validation
+Kubectl cluster-info
+Kubectl get svc
+
+
+
+Kubectl get nodes
+
+
+
+Step6: EKS Cluster Add-Ons
+Go to  the EKS Cluster User interface and click on Add-Ons tab
+Select 4 Add-Ons -  Amazon VPC CNI, kube-proxy, CoreDNS, Amazon EBS CSI Driver and add them in the cluster
+
+
+
+
+
+After adding these 4 Add-Ons. Check whether they are added to your EKS cluster as shown below
+
+
+
+Karpenter Deployment
+
+Step1: Helm Install
+curl https://baltocdn.com/helm/signing.asc | gpg --dearmor | sudo tee /usr/share/keyrings/helm.gpg > /dev/null
+
+
+sudo apt-get install apt-transport-https --yes
+
+
+echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/helm.gpg] https://baltocdn.com/helm/stable/debian/ all main" | sudo tee /etc/apt/sources.list.d/helm-stable-debian.list
+
+
+sudo apt-get update
+sudo apt-get install helm
+
+Step2: Karpenter Installation for creating worker nodes in the cluster.
+cd devops-infra/terraform/karpenter
+
+Terraform.tfvars fields Description as follows:
+Open the terraform.tfvars file and fill the variables with your respected values
+
+Parameter
+Description
+cluster_name
+The name of the existing EKS cluster to which Karpenter will be associated.
+eks_node_group_name
+The name of the node group that Karpenter will create.
+eks_subnets
+A list of subnets where the worker nodes will be deployed.
+Region
+The AWS region where the EKS cluster is located.
+Karpenter_tag_sg
+The security group of Karpenter.
+Eks_initial_desired_capacity
+The initial desired capacity for the node group according to project requirements.
+Karpenter_version
+The version of Karpenter to be used.
+Karpenter_instance_category
+The category of instance to be used for worker nodes.
+Karpenter_instance_family
+The family of instances to be used, such as "t3a" or "t2".
+Karpenter_capacity_type
+The capacity type for instances, which can be On-Demand or spot instances.
+Karpenter_cpu_limit
+The CPU limit to be used by Karpenter. Example- “2000” would mean 2 CPU cores 
+Karpenter_memory_limit
+The memory limit to be used by Karpenter.
+
+
+
+
+Run terraform initiate 
+terraform init
+
+
+Run terraform Plan
+terraform plan 
+
+
+Run terraform apply
+terraform apply
+
+After running terraform apply it will prompt for yes or no as to whether to execute the terraform code or not. Enter "yes" for execution or "no" for no execution.
+
+Step3: Karpenter validation 
+kubectl get pods -n karpenter
+
+Reference URLs:
+
+
+URL
+Description
+https://docs.aws.amazon.com/codecommit/latest/userguide/setting-up-git-remote-codecommit.html
+AWS git remote-codeCommit installation
+https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html
+Link to install awscli version 2
+https://developer.hashicorp.com/terraform/tutorials/aws-get-started/install-cli
+Link to Install terraform
+https://docs.aws.amazon.com/eks/latest/userguide/install-kubectl.html
+Link to install kubectl
+
+
+
